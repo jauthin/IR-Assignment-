@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NLP Text Summarizer</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #18181f;
+    --border: #2a2a38;
+    --accent: #7c6aff;
+    --accent2: #ff6a9b;
+    --accent3: #6affd4;
+    --text: #e8e8f0;
+    --muted: #6b6b80;
+    --glow: rgba(124, 106, 255, 0.15);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(124,106,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124,106,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .orb { position: fixed; border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: 0; opacity: 0.35; }
+  .orb-1 { width: 400px; height: 400px; background: var(--accent); top: -100px; left: -100px; }
+  .orb-2 { width: 300px; height: 300px; background: var(--accent2); bottom: -50px; right: -50px; }
+  .orb-3 { width: 200px; height: 200px; background: var(--accent3); top: 50%; left: 60%; }
+  .wrapper { position: relative; z-index: 1; max-width: 980px; margin: 0 auto; padding: 40px 24px 80px; }
+  header { text-align: center; margin-bottom: 56px; animation: fadeDown 0.7s ease both; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(124,106,255,0.12); border: 1px solid rgba(124,106,255,0.3);
+    border-radius: 100px; padding: 6px 16px;
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    letter-spacing: 0.12em; color: var(--accent); text-transform: uppercase; margin-bottom: 20px;
+  }
+  .badge::before { content: '◈'; font-size: 10px; }
+  h1 {
+    font-family: 'Syne', sans-serif; font-size: clamp(2.2rem, 5vw, 3.8rem);
+    font-weight: 800; line-height: 1.1; letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #e8e8f0 0%, var(--accent) 50%, var(--accent2) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 14px;
+  }
+  .subtitle { color: var(--muted); font-size: 1rem; font-weight: 300; letter-spacing: 0.01em; }
+  .pipeline {
+    display: flex; align-items: center; justify-content: center;
+    flex-wrap: wrap; gap: 4px; margin-bottom: 48px; animation: fadeUp 0.8s 0.2s ease both;
+  }
+  .step {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 16px;
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    color: var(--muted); letter-spacing: 0.05em; transition: all 0.3s;
+  }
+  .step.active { border-color: var(--accent); color: var(--accent); background: rgba(124,106,255,0.08); box-shadow: 0 0 20px rgba(124,106,255,0.15); }
+  .step-icon { font-size: 14px; }
+  .arrow { color: var(--border); font-size: 16px; padding: 0 2px; flex-shrink: 0; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; animation: fadeUp 0.8s 0.3s ease both; }
+  @media (max-width: 640px) { .cards { grid-template-columns: 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; transition: border-color 0.3s; }
+  .card:focus-within { border-color: var(--accent); box-shadow: 0 0 30px var(--glow); }
+  .card-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+  .card-label { display: flex; align-items: center; gap: 8px; font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .card-label .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
+  .card:focus-within .dot { background: var(--accent); }
+  .word-count { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; transition: all 0.3s; }
+  .word-count.has-text { color: var(--accent3); border-color: rgba(106,255,212,0.3); }
+  textarea { width: 100%; background: transparent; border: none; outline: none; color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 0.9rem; line-height: 1.7; resize: none; padding: 18px; min-height: 240px; caret-color: var(--accent); }
+  textarea::placeholder { color: var(--muted); opacity: 0.6; }
+  #output-card { border-color: var(--border); }
+  #output-card.has-content { border-color: rgba(106,255,212,0.3); }
+  #output-card .dot { background: var(--border); }
+  #output-card.has-content .dot { background: var(--accent3); }
+  #output-text { padding: 18px; min-height: 240px; font-family: 'DM Sans', sans-serif; font-size: 0.9rem; line-height: 1.8; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+  #output-text.populated { color: var(--text); }
+  #nlp-stats { display: none; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; animation: fadeUp 0.5s ease both; }
+  #nlp-stats.visible { display: grid; }
+  @media (max-width: 640px) { #nlp-stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; text-align: center; }
+  .stat-val { font-family: 'Syne', sans-serif; font-size: 1.6rem; font-weight: 800; background: linear-gradient(135deg, var(--accent), var(--accent3)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .stat-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; font-family: 'DM Mono', monospace; }
+  .compression-bar { display: none; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 24px; animation: fadeUp 0.4s ease both; }
+  .compression-bar.visible { display: flex; }
+  .bar-label { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); letter-spacing: 0.05em; white-space: nowrap; }
+  .bar-track { flex: 1; height: 6px; background: var(--surface2); border-radius: 100px; overflow: hidden; border: 1px solid var(--border); }
+  .bar-fill { height: 100%; border-radius: 100px; background: linear-gradient(90deg, var(--accent), var(--accent3)); transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); width: 0%; }
+  .bar-pct { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--accent3); white-space: nowrap; }
+
+  /* ── ROUGE ─────────────────────────────────────────────────────────────── */
+  #rouge-section { display: none; margin-bottom: 24px; animation: fadeUp 0.5s ease both; }
+  #rouge-section.visible { display: block; }
+  .rouge-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .rouge-title { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+  .rouge-badge { display: inline-flex; align-items: center; background: rgba(255,106,155,0.08); border: 1px solid rgba(255,106,155,0.25); border-radius: 100px; padding: 3px 10px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--accent2); letter-spacing: 0.06em; }
+  .rouge-info-btn { background: none; border: 1px solid var(--border); border-radius: 50%; width: 20px; height: 20px; font-size: 11px; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s; margin-left: auto; flex-shrink: 0; }
+  .rouge-info-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .rouge-info-panel { display: none; background: var(--surface2); border: 1px solid rgba(255,106,155,0.2); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; font-size: 12px; line-height: 1.75; color: var(--muted); }
+  .rouge-info-panel.open { display: block; }
+  .rouge-info-panel strong { color: var(--text); }
+  .rouge-info-panel code { font-family: 'DM Mono', monospace; background: rgba(124,106,255,0.12); border-radius: 4px; padding: 1px 5px; font-size: 11px; color: var(--accent); }
+  .rouge-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 700px) { .rouge-grid { grid-template-columns: 1fr; } }
+  .rouge-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; position: relative; overflow: hidden; transition: border-color 0.4s, box-shadow 0.4s; }
+  .rouge-card::before { content: ''; position: absolute; inset: 0; opacity: 0; transition: opacity 0.5s; pointer-events: none; }
+  .rouge-card.rouge-1::before { background: radial-gradient(ellipse at top left, rgba(124,106,255,0.1), transparent 65%); }
+  .rouge-card.rouge-2::before { background: radial-gradient(ellipse at top left, rgba(255,106,155,0.1), transparent 65%); }
+  .rouge-card.rouge-l::before { background: radial-gradient(ellipse at top left, rgba(106,255,212,0.1), transparent 65%); }
+  .rouge-card.loaded { border-color: rgba(255,106,155,0.2); }
+  .rouge-card.rouge-1.loaded { border-color: rgba(124,106,255,0.25); box-shadow: 0 0 20px rgba(124,106,255,0.06); }
+  .rouge-card.rouge-2.loaded { border-color: rgba(255,106,155,0.25); box-shadow: 0 0 20px rgba(255,106,155,0.06); }
+  .rouge-card.rouge-l.loaded { border-color: rgba(106,255,212,0.25); box-shadow: 0 0 20px rgba(106,255,212,0.06); }
+  .rouge-card.loaded::before { opacity: 1; }
+  .rouge-card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
+  .rouge-name { font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 700; color: var(--text); }
+  .rouge-desc { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 3px; }
+  .rouge-tag { font-family: 'DM Mono', monospace; font-size: 10px; border-radius: 6px; padding: 3px 8px; letter-spacing: 0.06em; }
+  .rouge-1 .rouge-tag { background: rgba(124,106,255,0.12); color: var(--accent); border: 1px solid rgba(124,106,255,0.25); }
+  .rouge-2 .rouge-tag { background: rgba(255,106,155,0.12); color: var(--accent2); border: 1px solid rgba(255,106,155,0.25); }
+  .rouge-l .rouge-tag { background: rgba(106,255,212,0.12); color: var(--accent3); border: 1px solid rgba(106,255,212,0.25); }
+  .rouge-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .rouge-metric { text-align: center; background: var(--surface2); border-radius: 8px; padding: 10px 6px; }
+  .rouge-metric-val { font-family: 'Syne', sans-serif; font-size: 1.1rem; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+  .rouge-1 .rouge-metric-val { color: var(--accent); }
+  .rouge-2 .rouge-metric-val { color: var(--accent2); }
+  .rouge-l .rouge-metric-val { color: var(--accent3); }
+  .rouge-metric-lbl { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .rouge-gauge { margin-top: 14px; }
+  .rouge-gauge-track { height: 4px; background: var(--surface2); border-radius: 100px; overflow: hidden; border: 1px solid var(--border); }
+  .rouge-gauge-fill { height: 100%; border-radius: 100px; width: 0%; transition: width 0.9s cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .rouge-1 .rouge-gauge-fill { background: linear-gradient(90deg, var(--accent), #9b6aff); }
+  .rouge-2 .rouge-gauge-fill { background: linear-gradient(90deg, var(--accent2), #ff9b6a); }
+  .rouge-l .rouge-gauge-fill { background: linear-gradient(90deg, var(--accent3), #6ab8ff); }
+  .rouge-gauge-label { display: flex; justify-content: space-between; font-family: 'DM Mono', monospace; font-size: 9px; color: var(--muted); margin-top: 5px; }
+  .rouge-quality { display: inline-flex; align-items: center; gap: 4px; font-family: 'DM Mono', monospace; font-size: 9px; border-radius: 4px; padding: 3px 8px; margin-top: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .quality-low  { background: rgba(255,106,155,0.1); color: var(--accent2); border: 1px solid rgba(255,106,155,0.2); }
+  .quality-med  { background: rgba(255,200,80,0.1);  color: #ffc850;        border: 1px solid rgba(255,200,80,0.2); }
+  .quality-high { background: rgba(106,255,212,0.1); color: var(--accent3); border: 1px solid rgba(106,255,212,0.2); }
+  /* ── end ROUGE ──────────────────────────────────────────────────────────── */
+
+  .controls { display: flex; align-items: center; gap: 12px; animation: fadeUp 0.8s 0.4s ease both; flex-wrap: wrap; }
+  .slider-group { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 16px; flex: 1; min-width: 200px; }
+  .slider-label { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); white-space: nowrap; letter-spacing: 0.05em; }
+  input[type=range] { flex: 1; accent-color: var(--accent); cursor: pointer; }
+  #ratio-val { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--accent); width: 28px; text-align: right; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 12px; font-family: 'Syne', sans-serif; font-size: 0.9rem; font-weight: 700; letter-spacing: 0.03em; cursor: pointer; border: none; transition: all 0.25s; white-space: nowrap; }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), #9b6aff); color: white; box-shadow: 0 4px 20px rgba(124,106,255,0.35); }
+  .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(124,106,255,0.5); }
+  .btn-primary:active:not(:disabled) { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-ghost { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { border-color: var(--accent2); color: var(--accent2); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
+  @keyframes pulse-border { 0%,100%{box-shadow:0 0 0 0 rgba(124,106,255,0.4)}50%{box-shadow:0 0 0 6px rgba(124,106,255,0)}}
+  .step.processing { animation: pulse-border 1s infinite; }
+  @keyframes fadeDown { from{opacity:0;transform:translateY(-20px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes fadeUp   { from{opacity:0;transform:translateY(16px)}  to{opacity:1;transform:translateY(0)} }
+  .footer { text-align: center; margin-top: 60px; color: var(--muted); font-size: 12px; font-family: 'DM Mono', monospace; opacity: 0.5; letter-spacing: 0.05em; }
+</style>
+</head>
+<body>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+<div class="wrapper">
+  <header>
+    <div class="badge">NLP · Extractive Summarization</div>
+    <h1>Text Summarizer</h1>
+    <p class="subtitle">Tokenization → Stopword Removal → Frequency Scoring → Extraction → ROUGE</p>
+  </header>
+
+  <div class="pipeline">
+    <div class="step" id="step-input"><span class="step-icon">📥</span>INPUT</div>
+    <span class="arrow">→</span>
+    <div class="step" id="step-preprocess"><span class="step-icon">🔬</span>PREPROCESS</div>
+    <span class="arrow">→</span>
+    <div class="step" id="step-tokenize"><span class="step-icon">✂️</span>TOKENIZE</div>
+    <span class="arrow">→</span>
+    <div class="step" id="step-score"><span class="step-icon">📊</span>SCORE</div>
+    <span class="arrow">→</span>
+    <div class="step" id="step-summary"><span class="step-icon">✨</span>SUMMARY</div>
+  </div>
+
+  <div class="cards">
+    <div class="card" id="input-card">
+      <div class="card-header">
+        <div class="card-label"><span class="dot"></span>INPUT TEXT</div>
+        <span class="word-count" id="input-wc">0 words</span>
+      </div>
+      <textarea id="input-text" placeholder="Paste your article, essay, or any long-form text here...&#10;&#10;For best results, use 100+ words."></textarea>
+    </div>
+    <div class="card" id="output-card">
+      <div class="card-header">
+        <div class="card-label"><span class="dot"></span>SUMMARY</div>
+        <span class="word-count" id="output-wc">0 words</span>
+      </div>
+      <div id="output-text">Summary will appear here after processing...</div>
+    </div>
+  </div>
+
+  <div id="nlp-stats">
+    <div class="stat-card"><div class="stat-val" id="stat-sentences">—</div><div class="stat-lbl">Sentences</div></div>
+    <div class="stat-card"><div class="stat-val" id="stat-tokens">—</div><div class="stat-lbl">Tokens</div></div>
+    <div class="stat-card"><div class="stat-val" id="stat-stopwords">—</div><div class="stat-lbl">Stopwords Removed</div></div>
+    <div class="stat-card"><div class="stat-val" id="stat-selected">—</div><div class="stat-lbl" id="stat-selected-lbl">Unique Stems</div></div>
+  </div>
+
+  <div class="compression-bar" id="comp-bar">
+    <span class="bar-label">COMPRESSION</span>
+    <div class="bar-track"><div class="bar-fill" id="bar-fill"></div></div>
+    <span class="bar-pct" id="bar-pct">—</span>
+  </div>
+
+  <!-- ── ROUGE Scores ──────────────────────────────────────────────────── -->
+  <div id="rouge-section">
+    <div class="rouge-header">
+      <span class="rouge-title">ROUGE Evaluation</span>
+      <span class="rouge-badge">Recall-Oriented Understudy for Gisting Evaluation</span>
+      <button class="rouge-info-btn" onclick="toggleRougeInfo()" title="What is ROUGE?">?</button>
+    </div>
+    <div class="rouge-info-panel" id="rouge-info">
+      <strong>What is ROUGE?</strong> A family of metrics for evaluating automatic summarization by comparing a generated summary against the original text used as a reference.<br><br>
+      <strong>ROUGE-1</strong> measures unigram (single word) overlap — how many individual words from the original appear in the summary.<br>
+      <strong>ROUGE-2</strong> measures bigram (consecutive word pair) overlap — captures phrasing and fluency retention.<br>
+      <strong>ROUGE-L</strong> uses the <em>Longest Common Subsequence</em> (LCS) — captures sentence-level structure without requiring consecutive matches.<br><br>
+      Each variant reports <code>Precision</code> (what fraction of the summary's grams appear in the original), <code>Recall</code> (what fraction of the original's grams are covered), and <code>F1</code> (harmonic mean). <strong>Note:</strong> extractive summaries naturally score high because sentences are lifted verbatim — ROUGE is most meaningful when comparing different summarization approaches.
+    </div>
+    <div class="rouge-grid">
+      <div class="rouge-card rouge-1" id="rouge-card-1">
+        <div class="rouge-card-top">
+          <div><div class="rouge-name">ROUGE-1</div><div class="rouge-desc">Unigram Overlap</div></div>
+          <span class="rouge-tag">N=1</span>
+        </div>
+        <div class="rouge-metrics">
+          <div class="rouge-metric"><div class="rouge-metric-val" id="r1-p">—</div><div class="rouge-metric-lbl">Precision</div></div>
+          <div class="rouge-metric"><div class="rouge-metric-val" id="r1-r">—</div><div class="rouge-metric-lbl">Recall</div></div>
+          <div class="rouge-metric"><div class="rouge-metric-val" id="r1-f">—</div><div class="rouge-metric-lbl">F1</div></div>
+        </div>
+        <div class="rouge-gauge">
+          <div class="rouge-gauge-track"><div class="rouge-gauge-fill" id="r1-bar"></div></div>
+          <div class="rouge-gauge-label"><span>F1 Score</span><span id="r1-pct">0%</span></div>
+        </div>
+        <div id="r1-quality"></div>
+      </div>
+      <div class="rouge-card rouge-2" id="rouge-card-2">
+        <div class="rouge-card-top">
+          <div><div class="rouge-name">ROUGE-2</div><div class="rouge-desc">Bigram Overlap</div></div>
+          <span class="rouge-tag">N=2</span>
+        </div>
+        <div class="rouge-metrics">
+          <div class="rouge-metric"><div class="rouge-metric-val" id="r2-p">—</div><div class="rouge-metric-lbl">Precision</div></div>
+          <div class="rouge-metric"><div class="rouge-metric-val" id="r2-r">—</div><div class="rouge-metric-lbl">Recall</div></div>
+          <div class="rouge-metric"><div class="rouge-metric-val" id="r2-f">—</div><div class="rouge-metric-lbl">F1</div></div>
+        </div>
+        <div class="rouge-gauge">
+          <div class="rouge-gauge-track"><div class="rouge-gauge-fill" id="r2-bar"></div></div>
+          <div class="rouge-gauge-label"><span>F1 Score</span><span id="r2-pct">0%</span></div>
+        </div>
+        <div id="r2-quality"></div>
+      </div>
+      <div class="rouge-card rouge-l" id="rouge-card-l">
+        <div class="rouge-card-top">
+          <div><div class="rouge-name">ROUGE-L</div><div class="rouge-desc">Longest Common Subsequence</div></div>
+          <span class="rouge-tag">LCS</span>
+        </div>
+        <div class="rouge-metrics">
+          <div class="rouge-metric"><div class="rouge-metric-val" id="rl-p">—</div><div class="rouge-metric-lbl">Precision</div></div>
+          <div class="rouge-metric"><div class="rouge-metric-val" id="rl-r">—</div><div class="rouge-metric-lbl">Recall</div></div>
+          <div class="rouge-metric"><div class="rouge-metric-val" id="rl-f">—</div><div class="rouge-metric-lbl">F1</div></div>
+        </div>
+        <div class="rouge-gauge">
+          <div class="rouge-gauge-track"><div class="rouge-gauge-fill" id="rl-bar"></div></div>
+          <div class="rouge-gauge-label"><span>F1 Score</span><span id="rl-pct">0%</span></div>
+        </div>
+        <div id="rl-quality"></div>
+      </div>
+    </div>
+  </div>
+  <!-- ── end ROUGE ──────────────────────────────────────────────────────── -->
+
+  <div class="controls">
+    <div class="slider-group">
+      <span class="slider-label">SUMMARY SIZE</span>
+      <input type="range" id="ratio-slider" min="10" max="60" value="30" step="5">
+      <span id="ratio-val">30%</span>
+    </div>
+    <button class="btn btn-ghost" id="stem-toggle-btn" onclick="toggleStemming()">⚗ Stemming ON</button>
+    <button class="btn btn-ghost" onclick="clearAll()">✕ Clear</button>
+    <button class="btn btn-primary" id="summarize-btn" onclick="summarize()">
+      <span id="btn-icon">◈</span>
+      <span id="btn-text">Summarize</span>
+    </button>
+  </div>
+
+  <div class="footer">TOKENIZE · SCORE · EXTRACT · SUMMARIZE · ROUGE</div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// ── Porter Stemmer (M.F. Porter 1980) ────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+function isConsonant(word,i){const c=word[i];if('aeiou'.includes(c))return false;if(c==='y')return i===0?true:!isConsonant(word,i-1);return true;}
+function measure(stem){let m=0,i=0,len=stem.length;while(i<len&&isConsonant(stem,i))i++;while(i<len){while(i<len&&!isConsonant(stem,i))i++;if(i<len){m++;while(i<len&&isConsonant(stem,i))i++;}}return m;}
+function containsVowel(stem){for(let i=0;i<stem.length;i++)if(!isConsonant(stem,i))return true;return false;}
+function endsDoubleConsonant(stem){const l=stem.length;return l>=2&&stem[l-1]===stem[l-2]&&isConsonant(stem,l-1);}
+function endsCVC(stem){const l=stem.length;if(l<3)return false;return isConsonant(stem,l-1)&&!isConsonant(stem,l-2)&&isConsonant(stem,l-3)&&!'wxy'.includes(stem[l-1]);}
+function step1a(w){if(w.endsWith('sses'))return w.slice(0,-4)+'ss';if(w.endsWith('ies'))return w.slice(0,-3)+'i';if(w.endsWith('ss'))return w;if(w.endsWith('s'))return w.slice(0,-1);return w;}
+function step1b(w){if(w.endsWith('eed')){const s=w.slice(0,-3);return measure(s)>0?s+'ee':w;}let flag=false,r=w;if(w.endsWith('ed')&&containsVowel(w.slice(0,-2))){r=w.slice(0,-2);flag=true;}else if(w.endsWith('ing')&&containsVowel(w.slice(0,-3))){r=w.slice(0,-3);flag=true;}if(flag){if(r.endsWith('at')||r.endsWith('bl')||r.endsWith('iz'))return r+'e';if(endsDoubleConsonant(r)&&!'lsz'.includes(r[r.length-1]))return r.slice(0,-1);if(measure(r)===1&&endsCVC(r))return r+'e';}return r;}
+function step1c(w){if(w.endsWith('y')&&containsVowel(w.slice(0,-1)))return w.slice(0,-1)+'i';return w;}
+const S2=[['ational','ate'],['tional','tion'],['enci','ence'],['anci','ance'],['izer','ize'],['abli','able'],['alli','al'],['entli','ent'],['eli','e'],['ousli','ous'],['ization','ize'],['ation','ate'],['ator','ate'],['alism','al'],['iveness','ive'],['fulness','ful'],['ousness','ous'],['aliti','al'],['iviti','ive'],['biliti','ble']];
+function step2(w){for(const[s,r]of S2){if(w.endsWith(s)){const stem=w.slice(0,-s.length);if(measure(stem)>0)return stem+r;}}return w;}
+const S3=[['icate','ic'],['ative',''],['alize','al'],['iciti','ic'],['ical','ic'],['ful',''],['ness','']];
+function step3(w){for(const[s,r]of S3){if(w.endsWith(s)){const stem=w.slice(0,-s.length);if(measure(stem)>0)return stem+r;}}return w;}
+const S4=['al','ance','ence','er','ic','able','ible','ant','ement','ment','ent','ion','ou','ism','ate','iti','ous','ive','ize'];
+function step4(w){for(const s of S4){if(w.endsWith(s)){const stem=w.slice(0,-s.length);if(s==='ion'){if(measure(stem)>1&&/[st]$/.test(stem))return stem;}else{if(measure(stem)>1)return stem;}}}return w;}
+function step5a(w){if(w.endsWith('e')){const s=w.slice(0,-1);if(measure(s)>1)return s;if(measure(s)===1&&!endsCVC(s))return s;}return w;}
+function step5b(w){if(measure(w)>1&&endsDoubleConsonant(w)&&w.endsWith('l'))return w.slice(0,-1);return w;}
+function stemWord(w){if(w.length<=2)return w;w=step1a(w);w=step1b(w);w=step1c(w);w=step2(w);w=step3(w);w=step4(w);w=step5a(w);w=step5b(w);return w;}
+
+let stemmingEnabled = true;
+
+// ══════════════════════════════════════════════════════════════════════════
+// ── ROUGE Calculator ─────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * getNgrams — build a frequency map of n-grams from a token array.
+ * e.g. ['the','cat','sat'], n=2  →  {"the cat":1, "cat sat":1}
+ */
+function getNgrams(tokens, n) {
+  const freq = {};
+  for (let i = 0; i <= tokens.length - n; i++) {
+    const gram = tokens.slice(i, i + n).join(' ');
+    freq[gram] = (freq[gram] || 0) + 1;
+  }
+  return freq;
+}
+
+/**
+ * ngramOverlap — clipped overlap count (each reference gram counts once).
+ */
+function ngramOverlap(refFreq, hypFreq) {
+  let overlap = 0;
+  for (const gram in hypFreq) {
+    if (refFreq[gram]) overlap += Math.min(hypFreq[gram], refFreq[gram]);
+  }
+  return overlap;
+}
+
+/**
+ * rougeN — compute ROUGE-N (precision, recall, F1).
+ * reference = full original text, hypothesis = generated summary.
+ */
+function rougeN(reference, hypothesis, n) {
+  const refTok = tokenize(reference);
+  const hypTok = tokenize(hypothesis);
+  if (!refTok.length || !hypTok.length) return { precision: 0, recall: 0, f1: 0 };
+  const refG = getNgrams(refTok, n);
+  const hypG = getNgrams(hypTok, n);
+  const refTotal = Object.values(refG).reduce((a,b)=>a+b, 0);
+  const hypTotal = Object.values(hypG).reduce((a,b)=>a+b, 0);
+  const overlap  = ngramOverlap(refG, hypG);
+  const precision = hypTotal > 0 ? overlap / hypTotal : 0;
+  const recall    = refTotal > 0 ? overlap / refTotal : 0;
+  const f1 = (precision + recall) > 0 ? (2*precision*recall)/(precision+recall) : 0;
+  return { precision, recall, f1 };
+}
+
+/**
+ * lcsLength — space-optimised DP for Longest Common Subsequence length.
+ */
+function lcsLength(a, b) {
+  const m = a.length, n = b.length;
+  let prev = new Array(n+1).fill(0);
+  let curr = new Array(n+1).fill(0);
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      curr[j] = a[i-1] === b[j-1] ? prev[j-1]+1 : Math.max(prev[j], curr[j-1]);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n];
+}
+
+/**
+ * rougeL — compute ROUGE-L via LCS (precision, recall, F1).
+ */
+function rougeL(reference, hypothesis) {
+  const refTok = tokenize(reference);
+  const hypTok = tokenize(hypothesis);
+  if (!refTok.length || !hypTok.length) return { precision: 0, recall: 0, f1: 0 };
+  const lcs = lcsLength(refTok, hypTok);
+  const precision = hypTok.length > 0 ? lcs / hypTok.length : 0;
+  const recall    = refTok.length  > 0 ? lcs / refTok.length  : 0;
+  const f1 = (precision + recall) > 0 ? (2*precision*recall)/(precision+recall) : 0;
+  return { precision, recall, f1 };
+}
+
+function calculateAllROUGE(original, summary) {
+  return {
+    rouge1: rougeN(original, summary, 1),
+    rouge2: rougeN(original, summary, 2),
+    rougeL: rougeL(original, summary)
+  };
+}
+
+// ── ROUGE UI helpers ──────────────────────────────────────────────────────
+function fmt(v) { return (v * 100).toFixed(1) + '%'; }
+
+function qualityLabel(f1) {
+  if (f1 >= 0.55) return { cls: 'quality-high', icon: '▲', text: 'HIGH' };
+  if (f1 >= 0.30) return { cls: 'quality-med',  icon: '◆', text: 'MODERATE' };
+  return                  { cls: 'quality-low',  icon: '▼', text: 'LOW' };
+}
+
+function renderROUGE(r1, r2, rl) {
+  // Populate values
+  document.getElementById('r1-p').textContent = fmt(r1.precision);
+  document.getElementById('r1-r').textContent = fmt(r1.recall);
+  document.getElementById('r1-f').textContent = fmt(r1.f1);
+  document.getElementById('r1-pct').textContent = fmt(r1.f1);
+
+  document.getElementById('r2-p').textContent = fmt(r2.precision);
+  document.getElementById('r2-r').textContent = fmt(r2.recall);
+  document.getElementById('r2-f').textContent = fmt(r2.f1);
+  document.getElementById('r2-pct').textContent = fmt(r2.f1);
+
+  document.getElementById('rl-p').textContent = fmt(rl.precision);
+  document.getElementById('rl-r').textContent = fmt(rl.recall);
+  document.getElementById('rl-f').textContent = fmt(rl.f1);
+  document.getElementById('rl-pct').textContent = fmt(rl.f1);
+
+  // Card glow
+  ['rouge-card-1','rouge-card-2','rouge-card-l'].forEach(id =>
+    document.getElementById(id).classList.add('loaded'));
+
+  // Animate gauge bars (defer one frame)
+  requestAnimationFrame(() => {
+    document.getElementById('r1-bar').style.width = Math.min(r1.f1*100, 100) + '%';
+    document.getElementById('r2-bar').style.width = Math.min(r2.f1*100, 100) + '%';
+    document.getElementById('rl-bar').style.width = Math.min(rl.f1*100, 100) + '%';
+  });
+
+  // Quality badges
+  const [q1, q2, ql] = [r1, r2, rl].map(s => qualityLabel(s.f1));
+  document.getElementById('r1-quality').innerHTML = `<span class="rouge-quality ${q1.cls}">${q1.icon} ${q1.text}</span>`;
+  document.getElementById('r2-quality').innerHTML = `<span class="rouge-quality ${q2.cls}">${q2.icon} ${q2.text}</span>`;
+  document.getElementById('rl-quality').innerHTML = `<span class="rouge-quality ${ql.cls}">${ql.icon} ${ql.text}</span>`;
+
+  // Console output
+  console.group('%c📐 ROUGE Scores', 'color:#ff6a9b;font-weight:bold;font-size:13px');
+  [[r1,'ROUGE-1'],[r2,'ROUGE-2'],[rl,'ROUGE-L']].forEach(([s,n]) =>
+    console.log(`%c${n}  %cP:${fmt(s.precision)}  R:${fmt(s.recall)}  F1:${fmt(s.f1)}`,
+      'color:#e8e8f0;font-weight:bold','color:#6affd4;font-family:monospace'));
+  console.groupEnd();
+}
+
+function resetROUGE() {
+  document.getElementById('rouge-section').classList.remove('visible');
+  ['rouge-card-1','rouge-card-2','rouge-card-l'].forEach(id =>
+    document.getElementById(id).classList.remove('loaded'));
+  ['r1-p','r1-r','r1-f','r2-p','r2-r','r2-f','rl-p','rl-r','rl-f',
+   'r1-pct','r2-pct','rl-pct'].forEach(id =>
+    document.getElementById(id).textContent = '—');
+  ['r1-bar','r2-bar','rl-bar'].forEach(id =>
+    document.getElementById(id).style.width = '0%');
+  ['r1-quality','r2-quality','rl-quality'].forEach(id =>
+    document.getElementById(id).innerHTML = '');
+}
+
+function toggleRougeInfo() {
+  document.getElementById('rouge-info').classList.toggle('open');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ── NLP Engine ────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+const STOPWORDS = new Set(['a','an','the','and','or','but','in','on','at','to','for','of','with','by','from','as','is','was','are','were','be','been','being','have','has','had','do','does','did','will','would','could','should','may','might','shall','must','can','it','its','this','that','these','those','i','me','my','we','our','you','your','he','his','she','her','they','them','their','what','which','who','whom','when','where','why','how','all','each','every','both','few','more','most','other','some','such','no','not','only','same','so','than','too','very','just','into','over','after','before','between','through','about','up','out','if','then','there','here','also','while','during','within','without','against','among','because','since','until','although','however','therefore','thus','hence','moreover','furthermore','nevertheless','nonetheless','instead','meanwhile','subsequently','consequently','accordingly']);
+
+function tokenize(text) {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(t=>t.length>1);
+}
+function splitSentences(text) {
+  return text.replace(/([.!?])\s+/g,'$1\n').split('\n').map(s=>s.trim()).filter(s=>s.length>20&&/[a-zA-Z]/.test(s));
+}
+function removeStopwords(tokens) { return tokens.filter(t=>!STOPWORDS.has(t)&&t.length>2); }
+// key() — single source of truth for how a token is indexed.
+// Both buildFrequencyMap and scoreSentence MUST call this so keys always match.
+function key(token) { return stemmingEnabled ? stemWord(token) : token; }
+
+function buildFrequencyMap(tokens) {
+  const freq={};
+  for(const t of tokens){const k=key(t);freq[k]=(freq[k]||0)+1;}
+  const max=Math.max(...Object.values(freq));
+  for(const k in freq)freq[k]/=max;
+  return freq;
+}
+function scoreSentence(sentence,freqMap){
+  const tokens=removeStopwords(tokenize(sentence));
+  if(!tokens.length)return 0;
+  return tokens.reduce((sum,t)=>{return sum+(freqMap[key(t)]||0);},0)/tokens.length;
+}
+function nlpSummarize(text,ratio){
+  const sentences=splitSentences(text);
+  if(sentences.length<3)return{summary:text,stats:null};
+  const allTokens=tokenize(text);
+  // Filter stopwords first, THEN build the map — so freq counts only content words.
+  // This makes stemming's collapsing effect (run/runs/running → run) more impactful.
+  const filtered=removeStopwords(allTokens);
+  const freqMap=buildFrequencyMap(filtered);
+  const scored=sentences.map((s,i)=>({sentence:s,index:i,score:scoreSentence(s,freqMap)}));
+  const n=Math.max(1,Math.round(sentences.length*(ratio/100)));
+  const selected=[...scored].sort((a,b)=>b.score-a.score).slice(0,n).sort((a,b)=>a.index-b.index);
+  const summary=selected.map(s=>s.sentence).join(' ');
+  // uniqueKeys reflects stemming: with stemming ON, morphological variants
+  // (run/runs/running) collapse into one key, so uniqueKeys is smaller.
+  const uniqueKeys=Object.keys(freqMap).length;
+  return{summary,stats:{sentences:sentences.length,tokens:allTokens.length,stopwordsRemoved:allTokens.length-filtered.length,selected:n,uniqueKeys,ratio:Math.round((summary.split(/\s+/).length/(text.split(/\s+/).length||1))*100)}};
+}
+
+// ── UI ────────────────────────────────────────────────────────────────────
+const inputEl=document.getElementById('input-text');
+const outputEl=document.getElementById('output-text');
+const inputWC=document.getElementById('input-wc');
+const outputWC=document.getElementById('output-wc');
+
+inputEl.addEventListener('input',()=>{
+  const wc=wordCount(inputEl.value);
+  inputWC.textContent=`${wc} word${wc!==1?'s':''}`;
+  inputWC.className='word-count'+(wc>0?' has-text':'');
+});
+document.getElementById('ratio-slider').addEventListener('input',e=>{
+  document.getElementById('ratio-val').textContent=e.target.value+'%';
+});
+function wordCount(text){return text.trim()?text.trim().split(/\s+/).length:0;}
+
+const steps=['input','preprocess','tokenize','score','summary'];
+function setStep(stepId){
+  steps.forEach(s=>{const el=document.getElementById('step-'+s);el.classList.remove('active','processing');});
+  if(stepId){const el=document.getElementById('step-'+stepId);el.classList.add('active','processing');}
+}
+function allStepsActive(){steps.forEach(s=>{const el=document.getElementById('step-'+s);el.classList.remove('processing');el.classList.add('active');});}
+async function animatePipeline(){for(const s of steps){setStep(s);await delay(420);}allStepsActive();}
+function delay(ms){return new Promise(r=>setTimeout(r,ms));}
+
+function setBtnLoading(loading){
+  const btn=document.getElementById('summarize-btn');
+  btn.disabled=loading;
+  if(loading){
+    document.getElementById('btn-icon').outerHTML='<span class="spinner" id="btn-icon"></span>';
+    document.getElementById('btn-text').textContent='Processing...';
+  }else{
+    document.getElementById('btn-icon').outerHTML='<span id="btn-icon">◈</span>';
+    document.getElementById('btn-text').textContent='Summarize';
+  }
+}
+
+async function summarize(){
+  const text=inputEl.value.trim();
+  if(!text){shake(inputEl);return;}
+  if(wordCount(text)<30){
+    outputEl.innerHTML='<span style="color:var(--accent2)">⚠ Please enter at least 30 words for meaningful summarization.</span>';
+    return;
+  }
+  setBtnLoading(true);
+  outputEl.className='';
+  outputEl.textContent='Processing...';
+  document.getElementById('nlp-stats').classList.remove('visible');
+  document.getElementById('comp-bar').classList.remove('visible');
+  document.getElementById('output-card').classList.remove('has-content');
+  resetROUGE();
+
+  const ratio=parseInt(document.getElementById('ratio-slider').value);
+  const pipelineAnim=animatePipeline();
+  await delay(100);
+  const result=nlpSummarize(text,ratio);
+  await pipelineAnim;
+  await delay(200);
+  setBtnLoading(false);
+
+  outputEl.className='populated';
+  outputEl.textContent=result.summary;
+  const owc=wordCount(result.summary);
+  outputWC.textContent=`${owc} words`;
+  outputWC.className='word-count has-text';
+  document.getElementById('output-card').classList.add('has-content');
+
+  if(result.stats){
+    const{sentences,tokens,stopwordsRemoved,selected,uniqueKeys,ratio:compRatio}=result.stats;
+    document.getElementById('stat-sentences').textContent=sentences;
+    document.getElementById('stat-tokens').textContent=tokens;
+    document.getElementById('stat-stopwords').textContent=stopwordsRemoved;
+    document.getElementById('stat-selected').textContent=uniqueKeys;
+    document.getElementById('stat-selected-lbl').textContent=stemmingEnabled?'Unique Stems':'Unique Words';
+    document.getElementById('nlp-stats').classList.add('visible');
+    const saved=100-compRatio;
+    document.getElementById('bar-pct').textContent=`${saved}% reduced`;
+    document.getElementById('comp-bar').classList.add('visible');
+    requestAnimationFrame(()=>{document.getElementById('bar-fill').style.width=Math.min(saved,98)+'%';});
+  }
+
+  // Compute and render ROUGE
+  const rouge=calculateAllROUGE(text,result.summary);
+  document.getElementById('rouge-section').classList.add('visible');
+  await delay(80);
+  renderROUGE(rouge.rouge1,rouge.rouge2,rouge.rougeL);
+}
+
+function toggleStemming(){
+  stemmingEnabled=!stemmingEnabled;
+  const btn=document.getElementById('stem-toggle-btn');
+  btn.textContent=stemmingEnabled?'⚗ Stemming ON':'⚗ Stemming OFF';
+  btn.style.borderColor=stemmingEnabled?'rgba(124,106,255,0.5)':'';
+  btn.style.color=stemmingEnabled?'var(--accent)':'';
+  // Re-run immediately if text is already present so the effect is visible
+  if(inputEl.value.trim().split(/\s+/).length>=30) summarize();
+}
+
+function clearAll(){
+  inputEl.value='';
+  outputEl.className='';
+  outputEl.textContent='Summary will appear here after processing...';
+  inputWC.textContent='0 words'; inputWC.className='word-count';
+  outputWC.textContent='0 words'; outputWC.className='word-count';
+  document.getElementById('nlp-stats').classList.remove('visible');
+  document.getElementById('comp-bar').classList.remove('visible');
+  document.getElementById('output-card').classList.remove('has-content');
+  document.getElementById('bar-fill').style.width='0%';
+  steps.forEach(s=>{const el=document.getElementById('step-'+s);el.classList.remove('active','processing');});
+  resetROUGE();
+}
+
+function shake(el){
+  el.parentElement.style.borderColor='var(--accent2)';
+  setTimeout(()=>{el.parentElement.style.borderColor='';},600);
+}
+
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter')summarize();});
+
+// Init stemming button style
+(function(){
+  const btn=document.getElementById('stem-toggle-btn');
+  if(btn){btn.style.borderColor='rgba(124,106,255,0.5)';btn.style.color='var(--accent)';}
+})();
+</script>
+</body>
+</html>
